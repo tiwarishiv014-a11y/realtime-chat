@@ -22,3 +22,9 @@ A full-stack real-time chat application built using Node.js, Express, MongoDB, a
 - Validation: express-validator
 
 ## 📁 Project Structure
+/config
+/controllers
+/models
+/routes
+/socket
+/public
