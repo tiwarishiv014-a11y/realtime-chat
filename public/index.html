@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>ChatFlow</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Syne:wght@700;800&display=swap" rel="stylesheet"/>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --bg:#0d0f14;--surface:#161920;--surface2:#1e2130;--border:#2a2f45;
+      --accent:#6c63ff;--accent2:#ff6584;--green:#00d9a6;
+      --text:#e8eaf0;--muted:#6b7280;
+      --bubble-out:#6c63ff;--bubble-in:#1e2130;
+    }
+    html,body{height:100%;font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);overflow:hidden}
+    .app{display:grid;grid-template-columns:300px 1fr;height:100vh}
+    .sidebar{background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+    .sidebar-top{padding:20px 16px 12px;border-bottom:1px solid var(--border)}
+    .logo{font-family:'Syne',sans-serif;font-size:20px;font-weight:800;background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:12px}
+    .auth-section{display:flex;flex-direction:column;gap:7px}
+    .tabs{display:flex;gap:4px}
+    .tab{flex:1;padding:7px;border-radius:8px;border:none;cursor:pointer;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:500;background:var(--surface2);color:var(--muted);transition:all .15s}
+    .tab.active{background:var(--accent);color:white}
+    .inp{width:100%;padding:9px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:9px;color:var(--text);font-size:12px;font-family:'DM Sans',sans-serif;outline:none;transition:border .15s}
+    .inp:focus{border-color:var(--accent)}
+    .inp::placeholder{color:var(--muted)}
+    .btn{padding:9px 14px;border-radius:9px;border:none;cursor:pointer;font-size:12px;font-weight:600;font-family:'DM Sans',sans-serif;transition:all .15s}
+    .btn-primary{background:linear-gradient(135deg,var(--accent),#8b7cf8);color:white;width:100%}
+    .btn-primary:hover{opacity:.9}
+    .btn-sm{padding:6px 12px;font-size:11px}
+    .btn-ghost{background:var(--surface2);color:var(--text)}
+    .user-badge{display:none;align-items:center;gap:10px;background:var(--surface2);border-radius:10px;padding:9px 12px}
+    .avatar{width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent2));display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex-shrink:0;color:white}
+    .avatar.sm{width:26px;height:26px;font-size:10px}
+    .avatar.lg{width:40px;height:40px;font-size:15px}
+    .uinfo{flex:1;min-width:0}
+    .uname{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .usub{font-size:11px;color:var(--muted)}
+    .dot-online{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 5px var(--green)}
+    .logout-btn{background:none;border:none;cursor:pointer;color:var(--muted);font-size:18px;padding:4px;border-radius:6px;transition:color .15s;line-height:1}
+    .logout-btn:hover{color:var(--accent2)}
+    .chat-section{display:none;flex-direction:column;flex:1;overflow:hidden}
+    .room-actions{padding:10px 16px}
+    .label{padding:8px 16px 4px;font-size:10px;font-weight:600;letter-spacing:1.5px;color:var(--muted);text-transform:uppercase}
+    .room-list{flex:1;overflow-y:auto;padding:2px 8px}
+    .room-item{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:10px;cursor:pointer;transition:background .15s;margin-bottom:1px;border:1px solid transparent}
+    .room-item:hover{background:var(--surface2)}
+    .room-item.active{background:rgba(108,99,255,.12);border-color:rgba(108,99,255,.25)}
+    .rdetail{flex:1;min-width:0}
+    .rname{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .rpreview{font-size:11px;color:var(--muted);margin-top:1px}
+    .chat-area{display:flex;flex-direction:column;background:var(--bg);position:relative}
+    .chat-bg{position:absolute;inset:0;opacity:.025;pointer-events:none;background-image:radial-gradient(circle,#6c63ff 1px,transparent 1px);background-size:28px 28px}
+    .chat-header{padding:14px 20px;border-bottom:1px solid var(--border);background:var(--surface);display:flex;align-items:center;gap:12px;position:relative;z-index:1}
+    .htitle{font-weight:600;font-size:15px}
+    .hstatus{font-size:11px;color:var(--green)}
+    .messages{flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:4px;position:relative;z-index:1}
+    .message{display:flex;flex-direction:column;max-width:65%;animation:fadeUp .18s ease}
+    @keyframes fadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+    .message.out{align-self:flex-end;align-items:flex-end}
+    .message.inc{align-self:flex-start;align-items:flex-start}
+    .msg-sender{font-size:10px;color:var(--accent);font-weight:600;margin-bottom:2px;padding-left:4px}
+    .bubble{padding:9px 13px;border-radius:14px;font-size:13px;line-height:1.5;word-break:break-word}
+    .out .bubble{background:var(--bubble-out);border-bottom-right-radius:3px}
+    .inc .bubble{background:var(--bubble-in);border:1px solid var(--border);border-bottom-left-radius:3px}
+    .msg-meta{display:flex;align-items:center;gap:4px;margin-top:2px;padding:0 3px}
+    .msg-time{font-size:10px;color:var(--muted)}
+    .ticks{font-size:11px;color:var(--muted);transition:color .3s}
+    .ticks.read{color:var(--green)}
+    .typing-wrap{align-self:flex-start;padding:8px 14px;background:var(--bubble-in);border:1px solid var(--border);border-radius:14px;border-bottom-left-radius:3px;display:none;align-items:center;gap:3px}
+    .typing-wrap.show{display:flex}
+    .tdot{width:5px;height:5px;border-radius:50%;background:var(--muted);animation:bounce 1s infinite}
+    .tdot:nth-child(2){animation-delay:.15s}
+    .tdot:nth-child(3){animation-delay:.3s}
+    @keyframes bounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}}
+    .input-area{padding:14px 20px;border-top:1px solid var(--border);background:var(--surface);display:flex;gap:10px;align-items:flex-end;position:relative;z-index:1}
+    .msg-inp{flex:1;padding:10px 14px;background:var(--surface2);border:1px solid var(--border);border-radius:20px;color:var(--text);font-size:13px;font-family:'DM Sans',sans-serif;resize:none;max-height:90px;line-height:1.5;outline:none;transition:border .15s}
+    .msg-inp:focus{border-color:var(--accent)}
+    .msg-inp::placeholder{color:var(--muted)}
+    .send-btn{width:42px;height:42px;border-radius:50%;border:none;cursor:pointer;background:linear-gradient(135deg,var(--accent),#8b7cf8);color:white;font-size:16px;display:flex;align-items:center;justify-content:center;transition:all .15s;flex-shrink:0}
+    .send-btn:hover{transform:scale(1.08)}
+    .empty-state{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:var(--muted);position:relative;z-index:1}
+    .empty-icon{font-size:44px;opacity:.35}
+    .overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);display:none;align-items:center;justify-content:center;z-index:100}
+    .overlay.show{display:flex}
+    .modal{background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:22px;width:340px;display:flex;flex-direction:column;gap:10px}
+    .modal h3{font-family:'Syne',sans-serif;font-size:17px}
+    .user-list{display:flex;flex-direction:column;gap:5px;max-height:220px;overflow-y:auto}
+    .uitem{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:9px;cursor:pointer;transition:background .15s;border:1px solid transparent}
+    .uitem:hover{background:var(--surface2)}
+    .uitem.sel{background:rgba(108,99,255,.13);border-color:rgba(108,99,255,.35)}
+    .btn-row{display:flex;gap:7px}
+    .group-row{display:flex;align-items:center;gap:8px;font-size:12px}
+    .toggle{width:34px;height:18px;background:var(--surface2);border:1px solid var(--border);border-radius:9px;cursor:pointer;position:relative;transition:background .2s;flex-shrink:0}
+    .toggle.on{background:var(--accent)}
+    .toggle::after{content:'';position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;background:white;transition:transform .2s}
+    .toggle.on::after{transform:translateX(16px)}
+    .toast{position:fixed;bottom:20px;right:20px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 16px;font-size:12px;z-index:999;opacity:0;transition:opacity .3s;pointer-events:none}
+    .toast.show{opacity:1}
+    ::-webkit-scrollbar{width:3px}
+    ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+  </style>
+</head>
+<body>
+
+<div class="app">
+  <div class="sidebar">
+    <div class="sidebar-top">
+      <div class="logo">ChatFlow</div>
+
+      <div class="auth-section" id="authSection">
+        <div class="tabs">
+          <button class="tab active" onclick="switchTab('login')">Login</button>
+          <button class="tab" onclick="switchTab('register')">Register</button>
+        </div>
+        <div id="regFields" style="display:none;flex-direction:column;gap:7px">
+          <input class="inp" id="regName" placeholder="Your name"/>
+        </div>
+        <input class="inp" id="authPhone" placeholder="Phone number"/>
+        <input class="inp" id="authPass" placeholder="Password" type="password"
+          onkeydown="if(event.key==='Enter')handleAuth()"/>
+        <button class="btn btn-primary" onclick="handleAuth()">Continue →</button>
+      </div>
+
+      <div class="user-badge" id="userBadge">
+        <div class="avatar" id="myAvatar">?</div>
+        <div class="uinfo">
+          <div class="uname" id="myName">—</div>
+          <div class="usub" id="myPhone">—</div>
+        </div>
+        <div class="dot-online"></div>
+        <button class="logout-btn" onclick="logout()" title="Logout">⏻</button>
+      </div>
+    </div>
+
+    <div class="chat-section" id="chatSection">
+      <div class="room-actions">
+        <button class="btn btn-primary btn-sm" style="width:100%" onclick="openModal()">+ New Chat</button>
+      </div>
+      <div class="label">Conversations</div>
+      <div class="room-list" id="roomList"></div>
+    </div>
+  </div>
+
+  <div class="chat-area" id="chatArea">
+    <div class="chat-bg"></div>
+    <div class="empty-state">
+      <div class="empty-icon">💬</div>
+      <div style="font-size:15px;font-weight:500">Select a chat to begin</div>
+      <div style="font-size:12px">Login and start a conversation</div>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="overlay">
+  <div class="modal">
+    <h3>New Conversation</h3>
+    <div class="group-row">
+      <div class="toggle" id="groupToggle" onclick="toggleGroup()"></div>
+      <span id="groupLabel">Private chat</span>
+    </div>
+    <div id="groupNameWrap" style="display:none;margin-top:4px">
+      <input class="inp" id="groupName" placeholder="Group name"/>
+    </div>
+    <div class="user-list" id="userSelectList"></div>
+    <div class="btn-row">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" style="flex:1" onclick="startChat()">Start →</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  // ── STATE ─────────────────────────────────────────────────────
+  let token        = null;
+  let myUser       = null;
+  let socket       = null;
+  let currentRoom  = null;
+  let allUsers     = [];
+  let rooms        = [];
+  let selectedUsers = [];
+  let isGroup      = false;
+  let typingTimer  = null;
+  let authMode     = 'login';
+
+  // ── HELPERS ───────────────────────────────────────────────────
+  function toast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 2500);
+  }
+
+  function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  // Central fetch — always attaches current token
+  async function api(url, options = {}) {
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = 'Bearer ' + token;
+    const res = await fetch(url, { ...options, headers });
+    return res;
+  }
+
+  // ── AUTH ──────────────────────────────────────────────────────
+  function switchTab(mode) {
+    authMode = mode;
+    document.querySelectorAll('.tab').forEach((t, i) =>
+      t.classList.toggle('active', (i===0 && mode==='login') || (i===1 && mode==='register')));
+    document.getElementById('regFields').style.display = mode === 'register' ? 'flex' : 'none';
+  }
+
+  async function handleAuth() {
+    const phone = document.getElementById('authPhone').value.trim();
+    const pass  = document.getElementById('authPass').value.trim();
+    if (!phone || !pass) return toast('Fill all fields');
+
+    let body = { phone, password: pass };
+    let url  = '/api/auth/login';
+
+    if (authMode === 'register') {
+      const name = document.getElementById('regName').value.trim();
+      if (!name) return toast('Enter your name');
+      body = { name, phone, password: pass };
+      url  = '/api/auth/register';
+    }
+
+    try {
+      const res  = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      const data = await res.json();
+      if (!res.ok) return toast(data.message || 'Failed');
+
+      // Set token FIRST before anything else
+      token  = data.accessToken;
+      myUser = data.user;
+
+      onLoggedIn();
+    } catch (err) {
+      toast('Error: ' + err.message);
+    }
+  }
+
+  async function onLoggedIn() {
+    document.getElementById('authSection').style.display = 'none';
+    document.getElementById('userBadge').style.display   = 'flex';
+    document.getElementById('chatSection').style.display = 'flex';
+    document.getElementById('myName').textContent   = myUser.name;
+    document.getElementById('myPhone').textContent  = myUser.phone;
+    document.getElementById('myAvatar').textContent = myUser.name[0].toUpperCase();
+
+    connectSocket();
+    await loadRooms();
+    await loadUsers();
+  }
+
+  function logout() {
+    if (socket) socket.disconnect();
+    token = null; myUser = null; socket = null;
+    currentRoom = null; allUsers = []; rooms = [];
+    document.getElementById('userBadge').style.display   = 'none';
+    document.getElementById('chatSection').style.display = 'none';
+    document.getElementById('authSection').style.display = 'flex';
+    document.getElementById('roomList').innerHTML = '';
+    document.getElementById('authPhone').value = '';
+    document.getElementById('authPass').value  = '';
+    document.getElementById('chatArea').innerHTML = `
+      <div class="chat-bg"></div>
+      <div class="empty-state">
+        <div class="empty-icon">💬</div>
+        <div style="font-size:15px;font-weight:500">Select a chat to begin</div>
+        <div style="font-size:12px">Login and start a conversation</div>
+      </div>`;
+    toast('Logged out');
+  }
+
+  // ── SOCKET ────────────────────────────────────────────────────
+  function connectSocket() {
+    socket = io({ auth: { token } });
+    socket.on('connect',    () => toast('Connected ✓'));
+    socket.on('disconnect', () => toast('Disconnected'));
+
+    socket.on('receive_message', (msg) => {
+      if (currentRoom && msg.roomId === currentRoom._id) {
+        appendMessage(msg);
+        socket.emit('message_read', { roomId: currentRoom._id, messageId: msg._id });
+      }
+      loadRooms();
+    });
+
+    socket.on('message_history', (msgs) => {
+      const c = document.getElementById('msgContainer');
+      if (!c) return;
+      c.innerHTML = '';
+      msgs.forEach(m => appendMessage(m, false));
+      addTypingIndicator();
+      c.scrollTop = c.scrollHeight;
+    });
+
+    socket.on('read_receipt', ({ messageId, userId }) => {
+      if (userId !== myUser.id) {
+        const el = document.querySelector(`[data-id="${messageId}"] .ticks`);
+        if (el) el.classList.add('read');
+      }
+    });
+
+    socket.on('user_online',  ({ userId }) => setOnlineStatus(userId, true));
+    socket.on('user_offline', ({ userId }) => setOnlineStatus(userId, false));
+    socket.on('user_typing',  () => { const ti = document.getElementById('typingWrap'); if(ti) ti.classList.add('show'); });
+    socket.on('user_stop_typing', () => { const ti = document.getElementById('typingWrap'); if(ti) ti.classList.remove('show'); });
+  }
+
+  // ── ROOMS ─────────────────────────────────────────────────────
+  async function loadRooms() {
+    try {
+      const res  = await api('/api/chat/rooms');
+      const data = await res.json();
+      rooms = Array.isArray(data) ? data : [];
+      renderRooms();
+    } catch (err) { console.error('loadRooms:', err); }
+  }
+
+  function renderRooms() {
+    const list = document.getElementById('roomList');
+    list.innerHTML = '';
+    rooms.forEach(room => {
+      const name = getRoomName(room);
+      const div  = document.createElement('div');
+      div.className      = 'room-item' + (currentRoom?._id === room._id ? ' active' : '');
+      div.dataset.roomId = room._id;
+      div.innerHTML = `
+        <div class="avatar sm" style="background:linear-gradient(135deg,${room.isGroup?'#ff6584,#ff9a3c':'#6c63ff,#8b7cf8'})">${name[0].toUpperCase()}</div>
+        <div class="rdetail">
+          <div class="rname">${esc(name)}</div>
+          <div class="rpreview">${room.isGroup ? room.members.length+' members' : 'Click to open'}</div>
+        </div>`;
+      div.onclick = () => openRoom(room);
+      list.appendChild(div);
+    });
+  }
+
+  function getRoomName(room) {
+    if (room.isGroup) return room.name || 'Group';
+    const other = room.members.find(m => m._id !== myUser.id);
+    return other ? other.name : 'Unknown';
+  }
+
+  // ── OPEN ROOM ─────────────────────────────────────────────────
+  function openRoom(room) {
+    currentRoom = room;
+    const name  = getRoomName(room);
+    document.querySelectorAll('.room-item').forEach(el =>
+      el.classList.toggle('active', el.dataset.roomId === room._id));
+
+    document.getElementById('chatArea').innerHTML = `
+      <div class="chat-bg"></div>
+      <div class="chat-header">
+        <div class="avatar lg">${name[0].toUpperCase()}</div>
+        <div>
+          <div class="htitle">${esc(name)}</div>
+          <div class="hstatus" id="hstatus">${room.isGroup ? room.members.length+' members' : 'online'}</div>
+        </div>
+      </div>
+      <div class="messages" id="msgContainer"></div>
+      <div class="input-area">
+        <textarea class="msg-inp" id="msgInp" placeholder="Type a message..." rows="1"
+          onkeydown="handleKey(event)" oninput="handleTyping()"></textarea>
+        <button class="send-btn" onclick="sendMessage()">➤</button>
+      </div>`;
+
+    socket.emit('join_room',      { roomId: room._id });
+    socket.emit('mark_room_read', { roomId: room._id });
+  }
+
+  function addTypingIndicator() {
+    const c = document.getElementById('msgContainer');
+    if (!c || document.getElementById('typingWrap')) return;
+    const ti = document.createElement('div');
+    ti.className = 'typing-wrap'; ti.id = 'typingWrap';
+    ti.innerHTML = '<div class="tdot"></div><div class="tdot"></div><div class="tdot"></div>';
+    c.appendChild(ti);
+  }
+
+  // ── MESSAGES ──────────────────────────────────────────────────
+  function sendMessage() {
+    const inp = document.getElementById('msgInp');
+    const content = inp?.value.trim();
+    if (!content || !currentRoom) return;
+    socket.emit('send_message', { roomId: currentRoom._id, content });
+    inp.value = '';
+    socket.emit('stop_typing', { roomId: currentRoom._id });
+  }
+
+  function handleKey(e) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+  }
+
+  function handleTyping() {
+    if (!currentRoom) return;
+    socket.emit('typing', { roomId: currentRoom._id });
+    clearTimeout(typingTimer);
+    typingTimer = setTimeout(() => socket.emit('stop_typing', { roomId: currentRoom._id }), 1500);
+  }
+
+  function appendMessage(msg, scroll = true) {
+    const c = document.getElementById('msgContainer');
+    if (!c) return;
+    const senderId = msg.sender._id || msg.sender;
+    const isOut    = senderId === myUser.id;
+    const name     = msg.sender.name || '';
+    const time     = new Date(msg.createdAt).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
+    const isRead   = msg.readBy && msg.readBy.length > 1;
+    const div      = document.createElement('div');
+    div.className  = `message ${isOut ? 'out' : 'inc'}`;
+    div.dataset.id = msg._id;
+    div.innerHTML  = `
+      ${!isOut && currentRoom?.isGroup ? `<div class="msg-sender">${esc(name)}</div>` : ''}
+      <div class="bubble">${esc(msg.content)}</div>
+      <div class="msg-meta">
+        <span class="msg-time">${time}</span>
+        ${isOut ? `<span class="ticks ${isRead?'read':''}">✓✓</span>` : ''}
+      </div>`;
+    const ti = document.getElementById('typingWrap');
+    if (ti) c.insertBefore(div, ti); else c.appendChild(div);
+    if (scroll) c.scrollTop = c.scrollHeight;
+  }
+
+  // ── MODAL ─────────────────────────────────────────────────────
+  async function loadUsers() {
+    try {
+      const res  = await api('/api/auth/users');
+      const data = await res.json();
+      allUsers = Array.isArray(data) ? data : [];
+    } catch (err) {
+      allUsers = [];
+      console.error('loadUsers error:', err);
+    }
+  }
+
+  async function openModal() {
+    selectedUsers = [];
+    isGroup = false;
+    document.getElementById('groupToggle').classList.remove('on');
+    document.getElementById('groupLabel').textContent      = 'Private chat';
+    document.getElementById('groupNameWrap').style.display = 'none';
+    document.getElementById('overlay').classList.add('show');
+    document.getElementById('userSelectList').innerHTML    =
+      '<div style="text-align:center;padding:16px;color:var(--muted);font-size:12px">Loading...</div>';
+
+    await loadUsers();
+    renderUserList();
+  }
+
+  function closeModal() { document.getElementById('overlay').classList.remove('show'); }
+
+  function toggleGroup() {
+    isGroup = !isGroup;
+    selectedUsers = [];
+    document.getElementById('groupToggle').classList.toggle('on', isGroup);
+    document.getElementById('groupLabel').textContent      = isGroup ? 'Group chat' : 'Private chat';
+    document.getElementById('groupNameWrap').style.display = isGroup ? 'block' : 'none';
+    renderUserList();
+  }
+
+  function renderUserList() {
+    const list = document.getElementById('userSelectList');
+    list.innerHTML = '';
+
+    if (!allUsers.length) {
+      list.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted);font-size:12px">No other users found.<br/>Register another account first.</div>';
+      return;
+    }
+
+    allUsers.forEach(u => {
+      const uid        = u._id.toString();
+      const isSelected = selectedUsers.includes(uid);
+      const div        = document.createElement('div');
+      div.className    = 'uitem' + (isSelected ? ' sel' : '');
+      div.innerHTML    = `
+        <div class="avatar sm">${u.name[0].toUpperCase()}</div>
+        <div class="uinfo">
+          <div class="uname">${esc(u.name)}</div>
+          <div class="usub">${u.phone}</div>
+        </div>
+        ${isSelected ? '<span style="color:var(--green);font-size:16px;margin-left:auto">✓</span>' : ''}`;
+      div.onclick = () => {
+        if (!isGroup) {
+          selectedUsers = isSelected ? [] : [uid];
+        } else {
+          isSelected
+            ? (selectedUsers = selectedUsers.filter(id => id !== uid))
+            : selectedUsers.push(uid);
+        }
+        renderUserList();
+      };
+      list.appendChild(div);
+    });
+  }
+
+  async function startChat() {
+    if (!selectedUsers.length) return toast('Select at least one user');
+    closeModal();
+    try {
+      let res;
+      if (!isGroup) {
+        res = await api('/api/chat/room/private', {
+          method: 'POST',
+          body: JSON.stringify({ targetUserId: selectedUsers[0] })
+        });
+      } else {
+        const name = document.getElementById('groupName').value.trim() || 'Group';
+        res = await api('/api/chat/room/group', {
+          method: 'POST',
+          body: JSON.stringify({ name, memberIds: selectedUsers })
+        });
+      }
+      const room = await res.json();
+      if (!res.ok) return toast(room.message || 'Failed');
+      await loadRooms();
+      openRoom(room);
+    } catch (err) {
+      toast('Error: ' + err.message);
+    }
+  }
+
+  function setOnlineStatus(userId, online) {
+    if (currentRoom && !currentRoom.isGroup) {
+      const other = currentRoom.members?.find(m => (m._id || m) === userId);
+      if (other) {
+        const el = document.getElementById('hstatus');
+        if (el) el.textContent = online ? 'online' : 'offline';
+      }
+    }
+  }
+</script>
+</body>
+</html>
